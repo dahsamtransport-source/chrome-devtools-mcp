@@ -164,3 +164,7 @@ third_party/depot_tools/
 third_party/ninja
 third_party/node
 third_party/typescript
+
+# Local Graphify knowledge graphs and isolated Python environment
+graphify-out/
+.graphify-venv/
