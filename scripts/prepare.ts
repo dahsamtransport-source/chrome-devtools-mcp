@@ -5,7 +5,7 @@
  */
 
 import {execSync} from 'node:child_process';
-import {existsSync, readFileSync, writeFileSync, rmSync} from 'node:fs';
+import {existsSync, readFileSync, writeFileSync, readdirSync} from 'node:fs';
 import {resolve} from 'node:path';
 
 const projectRoot = process.cwd();
@@ -81,10 +81,9 @@ function ensureSubmodule(): void {
       );
       return;
     } catch (error) {
-      console.warn(
-        'Failed to update sparse checkout in place, re-initializing:',
-        error,
-      );
+      throw new Error('Failed to update sparse checkout; existing files preserved.', {
+        cause: error,
+      });
     }
   }
 
@@ -98,14 +97,16 @@ function ensureSubmodule(): void {
       'modules',
       'devtools-frontend',
     );
-    // If the submodule was previously initialized (e.g. as a full checkout),
-    // the existing directories will cause `git clone` or `absorbgitdirs` to fail.
-    // We clean them up here to ensure the sparse checkout initialization succeeds.
-    if (existsSync(devtoolsFrontendDir)) {
-      rmSync(devtoolsFrontendDir, {recursive: true, force: true});
-    }
-    if (existsSync(gitModuleDir)) {
-      rmSync(gitModuleDir, {recursive: true, force: true});
+    // An existing partial checkout may contain local changes or Git objects.
+    // Never delete it implicitly during npm installation.
+    if (
+      (existsSync(devtoolsFrontendDir) &&
+        readdirSync(devtoolsFrontendDir).length > 0) ||
+      existsSync(gitModuleDir)
+    ) {
+      throw new Error(
+        'Existing incomplete devtools-frontend checkout preserved. Inspect and recover it manually, or use a fresh checkout.',
+      );
     }
 
     // 1. Clone only the tree structure of the default branch (no blobs)
@@ -131,14 +132,19 @@ function ensureSubmodule(): void {
 
     // 4. Update the submodule to the correct commit (this fetches the commit and only downloads the blobs for the sparse checkout)
     execSync(
-      'git submodule update --init --force --checkout third_party/devtools-frontend',
+      'git submodule update --init --checkout third_party/devtools-frontend',
       {
         cwd: projectRoot,
         stdio: 'inherit',
       },
     );
+    if (!existsSync(mcpEntry) || !existsSync(gnScriptsDir)) {
+      throw new Error('devtools-frontend checkout is incomplete');
+    }
   } catch (error) {
-    console.error('Failed to initialize devtools-frontend:', error);
+    throw new Error('Failed to initialize devtools-frontend; existing data preserved.', {
+      cause: error,
+    });
   }
 }
 
